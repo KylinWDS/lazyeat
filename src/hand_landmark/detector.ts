@@ -124,50 +124,56 @@ export class Detector {
   }
 
   // 检测手指是否竖起（改进版，考虑手的朝向）
-  static _fingersUp(hand: HandInfo): number[] {
-    const fingers: number[] = [];
+  static _fingersUp(hand: HandInfo): {
+    xFingers: number[];
+    yFingers: number[];
+  } {
+    const xFingers: number[] = [];
+    const yFingers: number[] = [];
     const tipIds = [4, 8, 12, 16, 20];
     const wrist = hand.landmarks[0];
     const middleMCP = hand.landmarks[9];
 
-    // 计算手掌方向向量
+    // 计算手掌坐标系
     const palmDirection = {
       x: middleMCP.x - wrist.x,
       y: middleMCP.y - wrist.y,
     };
-
-    // 计算局部坐标系基向量
     const palmSize = Math.sqrt(palmDirection.x ** 2 + palmDirection.y ** 2);
     const palmXBase = {
       x: palmDirection.x / palmSize,
       y: palmDirection.y / palmSize,
     };
-    const palmYBase = { x: palmXBase.y, y: -palmXBase.x }; // 垂直方向
+    const palmYBase = { x: palmXBase.y, y: -palmXBase.x };
 
-    // 坐标转换函数（全局坐标 -> 手掌局部坐标）
     const toLocal = (point: { x: number; y: number }) => ({
       x: (point.x - wrist.x) * palmXBase.x + (point.y - wrist.y) * palmXBase.y,
       y: (point.x - wrist.x) * palmYBase.x + (point.y - wrist.y) * palmYBase.y,
     });
 
-    // 检测大拇指（使用局部坐标系x轴方向）
+    // 处理大拇指（x轴方向）
     const thumbTip = toLocal(hand.landmarks[tipIds[0]]);
     const thumbMCP = toLocal(hand.landmarks[tipIds[0] - 2]);
-    const thumbDirection = thumbTip.x - thumbMCP.x;
-    fingers.push(
+    const thumbDirectionX = thumbTip.x - thumbMCP.x;
+    xFingers[0] =
       hand.handedness === "Right"
-        ? +(thumbDirection > 0)
-        : +(thumbDirection < 0)
-    );
+        ? +(thumbDirectionX > 0)
+        : +(thumbDirectionX < 0);
 
-    // 检测其他四指（使用局部坐标系y轴方向）
+    // 处理其他四指（y轴方向）
     for (let id = 1; id < 5; id++) {
       const tip = toLocal(hand.landmarks[tipIds[id]]);
       const pip = toLocal(hand.landmarks[tipIds[id] - 2]);
-      fingers.push(tip.y > pip.y ? 1 : 0); // 在局部坐标系中比较y坐标
+      yFingers[id] = tip.y > pip.y ? 1 : 0;
     }
 
-    return fingers;
+    // 补充其他方向的默认值
+    yFingers[0] = 0; // 大拇指y轴默认不检测
+    for (let id = 1; id < 5; id++) {
+      xFingers[id] = 0; // 其他手指x轴默认不检测
+    }
+
+    return { xFingers, yFingers };
   }
 
   // 获取单个手的手势类型
