@@ -123,33 +123,48 @@ export class Detector {
     return hand.landmarks[tipIndices[fingerIndex]];
   }
 
-  // 检测手指是否竖起
+  // 检测手指是否竖起（改进版，考虑手的朝向）
   static _fingersUp(hand: HandInfo): number[] {
     const fingers: number[] = [];
-    const tipIds = [4, 8, 12, 16, 20]; // 从大拇指开始，依次为每个手指指尖
+    const tipIds = [4, 8, 12, 16, 20];
+    const wrist = hand.landmarks[0];
+    const middleMCP = hand.landmarks[9];
 
-    // 检测大拇指
-    if (hand.handedness === "Right") {
-      if (hand.landmarks[tipIds[0]].x < hand.landmarks[tipIds[0] - 1].x) {
-        fingers.push(0);
-      } else {
-        fingers.push(1);
-      }
-    } else {
-      if (hand.landmarks[tipIds[0]].x > hand.landmarks[tipIds[0] - 1].x) {
-        fingers.push(0);
-      } else {
-        fingers.push(1);
-      }
-    }
+    // 计算手掌方向向量
+    const palmDirection = {
+      x: middleMCP.x - wrist.x,
+      y: middleMCP.y - wrist.y,
+    };
 
-    // 检测其他四个手指
+    // 计算局部坐标系基向量
+    const palmSize = Math.sqrt(palmDirection.x ** 2 + palmDirection.y ** 2);
+    const palmXBase = {
+      x: palmDirection.x / palmSize,
+      y: palmDirection.y / palmSize,
+    };
+    const palmYBase = { x: palmXBase.y, y: -palmXBase.x }; // 垂直方向
+
+    // 坐标转换函数（全局坐标 -> 手掌局部坐标）
+    const toLocal = (point: { x: number; y: number }) => ({
+      x: (point.x - wrist.x) * palmXBase.x + (point.y - wrist.y) * palmXBase.y,
+      y: (point.x - wrist.x) * palmYBase.x + (point.y - wrist.y) * palmYBase.y,
+    });
+
+    // 检测大拇指（使用局部坐标系x轴方向）
+    const thumbTip = toLocal(hand.landmarks[tipIds[0]]);
+    const thumbMCP = toLocal(hand.landmarks[tipIds[0] - 2]);
+    const thumbDirection = thumbTip.x - thumbMCP.x;
+    fingers.push(
+      hand.handedness === "Right"
+        ? +(thumbDirection > 0)
+        : +(thumbDirection < 0)
+    );
+
+    // 检测其他四指（使用局部坐标系y轴方向）
     for (let id = 1; id < 5; id++) {
-      if (hand.landmarks[tipIds[id]].y < hand.landmarks[tipIds[id] - 2].y) {
-        fingers.push(1);
-      } else {
-        fingers.push(0);
-      }
+      const tip = toLocal(hand.landmarks[tipIds[id]]);
+      const pip = toLocal(hand.landmarks[tipIds[id] - 2]);
+      fingers.push(tip.y > pip.y ? 1 : 0); // 在局部坐标系中比较y坐标
     }
 
     return fingers;
